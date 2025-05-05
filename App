@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+ <html lang="en">
+ <head>
+   <meta charset="UTF-8">
+   <title>Global Disaster & Wildfire Risk Map</title>
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+   <link rel="stylesheet" href="styles.css">
+ </head>
+ <body>
+   <div id="searchContainer">
+     <input type="text" id="searchInput" placeholder="Search for a city..." />
+   </div>
+   <div id="map"></div>
+ 
+   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+   <script src="script.js"></script>
+ </body>
+ </html>
+ /* styles.css */
+ #map {
+   height: 100vh;
+   width: 100%;
+   touch-action: manipulation;
+ }
+ 
+ .legend {
+   background: white;
+   padding: 10px;
+   line-height: 1.5em;
+ }
+ 
+ #searchContainer {
+   position: absolute;
+   top: 10px;
+   left: 50%;
+   transform: translateX(-50%);
+   z-index: 1000;
+   background: white;
+   padding: 5px;
+   border-radius: 8px;
+   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+   display: flex;
+   align-items: center;
+ }
+ 
+ #searchInput {
+   width: 250px;
+   padding: 8px 12px;
+   font-size: 16px;
+   border: 1px solid #ccc;
+   border-radius: 4px;
+ }
+ 
+ @media (max-width: 600px) {
+   #searchInput {
+     width: 180px;
+     font-size: 14px;
+   }
+   #searchContainer {
+     padding: 4px;
+   }
+ }
+ // script.js
+ const map = L.map('map', {
+   worldCopyJump: true,
+   maxBoundsViscosity: 1.0,
+   maxBounds: [
+     [-90, -180],
+     [90, 180]
+   ]
+ }).setView([20, 0], 2);
+ 
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+   attribution: '&copy; OpenStreetMap contributors'
+ }).addTo(map);
+ 
+ const cities = [
+   { name: 'Los Angeles', lat: 34.05, lon: -118.25 },
+   { name: 'São Paulo', lat: -23.55, lon: -46.63 },
+   { name: 'Tokyo', lat: 35.68, lon: 139.69 },
+   { name: 'New Delhi', lat: 28.61, lon: 77.20 },
+   { name: 'Cape Town', lat: -33.92, lon: 18.42 }
+ ];
+ 
+ const apiKey = 'YOUR_OPENWEATHERMAP_API_KEY'; // Replace with your actual API key
+ const cityMarkers = [];
+ 
+ async function getRiskScore(city) {
+   const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${city.lat}&lon=${city.lon}&appid=${apiKey}&units=metric`;
+   try {
+     const res = await fetch(weatherUrl);
+     const data = await res.json();
+     const { temp, humidity } = data.main;
+     const windSpeed = data.wind.speed;
+ 
+     let wildfireRisk = Math.min(100, (
+       (temp > 30 ? temp - 25 : 0) +
+       (humidity < 40 ? (40 - humidity) : 0) +
+       (windSpeed > 5 ? (windSpeed - 5) * 2 : 0)
+     ));
+ 
+     return {
+       weather: data.weather[0].description,
+       temp,
+       humidity,
+       windSpeed,
+       wildfireRisk
+     };
+   } catch (error) {
+     console.error('Error fetching weather data:', error);
+     return null;
+   }
+ }
+ 
+ function getColor(risk) {
+   return risk > 75 ? 'red' :
+          risk > 50 ? 'orange' :
+          risk > 25 ? 'yellow' : 'green';
+ }
+ 
+ async function plotCities() {
+   for (const city of cities) {
+     const data = await getRiskScore(city);
+     if (!data) continue;
+ 
+     const marker = L.circleMarker([city.lat, city.lon], {
+       radius: 8,
+       fillColor: getColor(data.wildfireRisk),
+       color: '#000',
+       weight: 1,
+       fillOpacity: 0.8
+     }).addTo(map);
+ 
+     marker.bindPopup(`
+       <strong>${city.name}</strong><br>
+       🌡 Temp: ${data.temp}°C<br>
+       💧 Humidity: ${data.humidity}%<br>
+       💨 Wind: ${data.windSpeed} m/s<br>
+       🔥 Wildfire Risk: ${data.wildfireRisk.toFixed(1)}%<br>
+       ☁️ Weather: ${data.weather}
+     `);
+ 
+     city.marker = marker;
+     cityMarkers.push(city);
+   }
+ }
+ 
+ plotCities();
+ 
+ document.getElementById('searchInput').addEventListener('input', function() {
+   const query = this.value.toLowerCase();
+   const match = cityMarkers.find(c => c.name.toLowerCase().startsWith(query));
+   if (match) {
+     map.setView([match.lat, match.lon], 6);
+     match.marker.openPopup();
+   }
+ });
